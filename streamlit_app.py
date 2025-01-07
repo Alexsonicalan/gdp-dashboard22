@@ -1,151 +1,135 @@
-import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import streamlit as st
+import base64
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+# Inicializar a base de dados (persistência entre execuções)
+if 'dados' not in st.session_state:
+    st.session_state.dados = []
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
-
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
-
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
-
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
-
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
-
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
-
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
-
-    return gdp_df
-
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
+# Função para registrar atleta individual
+def registrar_atleta(atleta):
+    try:
+        idade = int(atleta['Idade'].split('-')[0]) if '-' in atleta['Idade'] else int(atleta['Idade'].replace('Acima de ', ''))
+        categorias = {
+            range(20, 31): '20-30',
+            range(35, 41): '35-40',
+            range(40, 50): '40-49',
+            range(50, 60): '50-59',
+            range(60, 65): '60-64',
+            range(65, 70): '65-69',
+            range(70, 75): '70-74',
+            range(75, 80): '75-79',
+            range(80, 85): '80-84'
+        }
+        for faixa, categoria in categorias.items():
+            if idade in faixa:
+                atleta['Categoria'] = categoria
+                break
         else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
+            atleta['Categoria'] = 'Acima de 85' if idade >= 85 else 'Fora de categoria'
 
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+        st.session_state.dados.append(atleta)
+        st.experimental_rerun()
+        st.success(f"Atleta {atleta['Nome']} registrado com sucesso!")
+    except ValueError:
+        st.error("Erro ao processar a idade. Verifique o campo.")
+    except Exception as e:
+        st.error(f"Ocorreu um erro: {e}")
+
+# Função para registrar atletas em lote
+def registrar_atletas_em_lote():
+    uploaded_file = st.file_uploader("Escolha um arquivo Excel", type=["xlsx"])
+
+    if uploaded_file is not None:
+        try:
+            df = pd.read_excel(uploaded_file)
+            for _, row in df.iterrows():
+                atleta = {
+                    'Nome': row['Nome'],
+                    'Idade': row['Idade'],
+                    'Sexo': row['Sexo'],
+                    'Equipe': row['Equipe']
+                }
+                registrar_atleta(atleta)
+            st.success("Todos os atletas foram registrados com sucesso!")
+        except Exception as e:
+            st.error(f"Erro ao processar o arquivo: {e}")
+    else:
+        st.warning("Nenhum arquivo foi carregado.")
+
+# Função para exportar dados para CSV
+def exportar_dados():
+    if st.session_state.dados:
+        df = pd.DataFrame(st.session_state.dados)
+        csv = df.to_csv(index=False)
+        b64 = base64.b64encode(csv.encode()).decode()
+        href = f'<a href="data:file/csv;base64,{b64}" download="atletas.csv">Download CSV</a>'
+        st.markdown(href, unsafe_allow_html=True)
+    else:
+        st.warning("Nenhum dado para exportar.")
+
+# Função para organizar chaves
+def organizar_chaves():
+    if st.session_state.dados:
+        df = pd.DataFrame(st.session_state.dados)
+        for sexo in df['Sexo'].unique():
+            df_sexo = df[df['Sexo'] == sexo]
+            categorias = df_sexo['Categoria'].unique()
+            for categoria in categorias:
+                if categoria != 'Fora de categoria':
+                    st.write(f"\nSexo: {sexo}, Categoria: {categoria}")
+                    competidores = df_sexo[df_sexo['Categoria'] == categoria]
+                    if len(competidores) < 2:
+                        st.write("Não há competidores suficientes para formar chaves nesta categoria.")
+                        continue
+                    competidores = competidores.sample(frac=1).reset_index(drop=True)
+                    chaves = [competidores.iloc[i:i + 2] for i in range(0, len(competidores), 2)]
+                    for i, chave in enumerate(chaves):
+                        st.write(f"Chave {i + 1}:")
+                        st.dataframe(chave)
+                else:
+                    st.write(f"\nCompetidores Fora de Categoria do sexo {sexo} não serão incluídos nas chaves.")
+    else:
+        st.warning("Nenhum dado disponível para organizar chaves.")
+
+# Interface Streamlit
+st.title("Registro de Atletas")
+
+# Formulário para registro individual
+with st.form("registro_form"):
+    st.text_input("Nome:", key="nome")
+    opcoes_idade = ['20-30', '35-40', '40-49', '50-59', '60-64', '65-69', '70-74', '75-79', '80-84', 'Acima de 85']
+    st.selectbox("Idade:", opcoes_idade, key="idade")
+    st.selectbox("Sexo:", ['M', 'F'], key="sexo")
+    st.selectbox("Equipe:", ['BRASIL', 'CHILE', 'EQUADOR', 'VENEZUELA'], key="equipe")
+    submitted = st.form_submit_button("Registrar Atleta")
+    if submitted:
+        atleta = {
+            'Nome': st.session_state.nome,
+            'Idade': st.session_state.idade,
+            'Sexo': st.session_state.sexo,
+            'Equipe': st.session_state.equipe
+        }
+        registrar_atleta(atleta)
+
+# Botão para registrar atletas em lote
+st.subheader("Registrar Atletas em Lote")
+registrar_atletas_em_lote()
+
+# Exibir tabela de atletas registrados
+if st.session_state.dados:
+    st.subheader("Atletas Registrados:")
+    st.dataframe(pd.DataFrame(st.session_state.dados))
+
+# Botões de Exportar e Organizar Chaves
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("Exportar Dados"):
+        exportar_dados()
+with col2:
+    if st.button("Organizar Chaves"):
+        organizar_chaves()
+
+st.markdown("---")
+st.markdown("Preencha os campos acima para registrar atletas individualmente ou carregue um arquivo Excel para registro em lote.")
+st.markdown("Use os botões para exportar dados ou organizar os competidores em chaves.")
